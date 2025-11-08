@@ -24,6 +24,10 @@ const fileSchema = new mongoose.Schema(
       type: String,
       required: [true, "MIME type is required"],
     },
+    public: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );

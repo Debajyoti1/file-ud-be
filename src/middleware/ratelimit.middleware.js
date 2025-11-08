@@ -10,7 +10,7 @@ const redisClient = require("../config/redis");
 function rateLimit({ prefix, limit, window }) {
   return async (req, res, next) => {
     try {
-      const userId = req.user?.id || req.ip; // fallback for unauthenticated routes
+      const userId = req?.user?.id || req.ip; // fallback for unauthenticated routes
       const key = `rate:${prefix}:${userId}`;
 
       // Lua-like atomic increment and TTL set
