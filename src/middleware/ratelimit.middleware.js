@@ -1,5 +1,5 @@
-const redisClient = require("../config/redis");
-
+const initRedis = require("../config/redis");
+const redisClient = initRedis();
 function rateLimit({ prefix, limit, window }) {
   return async (req, res, next) => {
     try {

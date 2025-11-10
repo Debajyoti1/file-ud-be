@@ -14,6 +14,8 @@ MONGO_URI=mongodb://localhost:27017/myapp
 # -------------------------------
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
+REDIS_DB=1
+
 # Leave empty if no password set
 REDIS_PASSWORD=
 
@@ -27,12 +29,6 @@ JWT_REFRESH_SECRET=supersecret_refresh_key_456
 # Token Expiry times
 JWT_ACCESS_EXPIRY=15m
 JWT_REFRESH_EXPIRY=7d
-
-# -------------------------------
-# File Upload Configuration
-# -------------------------------
-UPLOAD_DIR=uploads
-MAX_FILE_SIZE=10737418240   # 10 GB in bytes
 
 # -------------------------------
 # Logging & Misc
