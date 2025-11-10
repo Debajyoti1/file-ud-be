@@ -7,7 +7,6 @@ const logger = require("../config/logger.config");
 
 const redis = initRedis();
 
-// Helper functions
 const generateAccessToken = (user) =>
   jwt.sign({ id: user._id, email: user.email, name: user.name }, config.jwt.accessSecret, {
     expiresIn: config.jwt.accessExpiry,
@@ -20,7 +19,6 @@ const generateRefreshToken = (user) =>
 
 const buildRedisKey = (userId, token) => `fileud:refresh:${userId}:${token}`;
 
-// REGISTER
 exports.register = async (req, res) => {
   const reqId = req.id;
   logger.info(`[${reqId}] Starting user registration`);
@@ -46,7 +44,6 @@ exports.register = async (req, res) => {
   }
 };
 
-// LOGIN
 exports.login = async (req, res) => {
   const reqId = req.id;
   logger.info(`[${reqId}] Starting user login`);
@@ -96,7 +93,6 @@ exports.login = async (req, res) => {
 };
 
 
-// LOGOUT
 exports.logout = async (req, res) => {
   const reqId = req.id;
   logger.info(`[${reqId}] Starting logout`);
@@ -129,7 +125,6 @@ exports.logout = async (req, res) => {
   }
 };
 
-// REFRESH TOKEN
 exports.refresh = async (req, res) => {
   const reqId = req.id;
   logger.info(`[${reqId}] Starting token refresh`);

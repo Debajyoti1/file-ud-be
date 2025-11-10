@@ -1,13 +1,6 @@
 const jwt = require("jsonwebtoken");
 const config = require("../config/env");
 
-/**
- * Middleware: Verify Access Token
- * ---------------------------------
- * Checks for a valid access token in cookies.
- * If valid -> attaches user to req.user
- * If invalid -> responds with 401 Unauthorized
- */
 const verifyAccessToken = (req, res, next) => {
   try {
     const token = req.cookies?.accessToken;

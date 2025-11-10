@@ -27,7 +27,6 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-// Automatically remove password from API responses
 userSchema.methods.toJSON = function () {
   const user = this.toObject();
   delete user.password;

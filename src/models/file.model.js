@@ -6,15 +6,15 @@ const fileSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      index: true, // allows fast lookup by user
+      index: true,
     },
     name: {
       type: String,
-      required: [true, "Stored filename is required"], // saved filename on disk (e.g., UUID)
+      required: [true, "Stored filename is required"],
     },
     actualName: {
       type: String,
-      required: [true, "Original filename is required"], // original name from upload
+      required: [true, "Original filename is required"],
     },
     size: {
       type: Number,
@@ -42,7 +42,6 @@ fileSchema.set("toJSON", {
 });
 
 
-// Compound index for faster user-specific file queries with sorting
 fileSchema.index({ user: 1, createdAt: -1 });
 
 const File = mongoose.model("File", fileSchema);

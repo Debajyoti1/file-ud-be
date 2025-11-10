@@ -1,5 +1,6 @@
 const fs = require("fs");
-// Helper: stream a file safely
+const logger = require("../config/logger.config");
+
 const streamFile = (filePath, fileName, res, reqId) => {
   res.setHeader(
     "Content-Disposition",
@@ -22,4 +23,4 @@ const streamFile = (filePath, fileName, res, reqId) => {
     logger.info(`[${reqId}] File streaming completed: ${fileName}`)
   );
 };
-exports.default= { streamFile };
+module.exports = { streamFile };

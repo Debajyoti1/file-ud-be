@@ -19,7 +19,6 @@ if (!fs.existsSync(UPLOAD_DIR)) {
   logger.info(`[SYSTEM] Upload directory created`);
 }
 
-// Multer configuration
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     logger.info(`[${req.id}] Upload destination set to temp folder`);

@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const util = require("util");
+const mongoose = require("mongoose");
 const File = require("../models/file.model");
 const User = require("../models/user.model");
 const initRedis = require("../config/redis");
@@ -10,10 +10,8 @@ const { streamFile } = require("../util/stream.util");
 const redis = initRedis();
 
 const { TEMP_DIR, UPLOAD_DIR } = require("../middleware/upload.middleware");
+const { getUserByToken } = require("../util/jwt.util");
 
-// --------------------
-// UPLOAD CONTROLLER
-// --------------------
 exports.uploadFile = async (req, res) => {
   const reqId = req.id;
   logger.info(`[${reqId}] Starting file upload`);
@@ -78,30 +76,29 @@ exports.uploadFile = async (req, res) => {
     logger.info(`[${reqId}] Completed file upload`);
   }
 };
-// DOWNLOAD CONTROLLER
 exports.downloadFile = async (req, res) => {
   const reqId = req.id;
+  const fileId = req.params.id;
+  const cacheKey = `fileud:fileinfo:${fileId}`;
   logger.info(`[${reqId}] Starting file download`);
 
   try {
-    const userId = req.user?.id;
-    const { id: fileId } = req.params;
-    if (!fileId) {
-      logger.warn(`[${reqId}] Missing file ID in request`);
-      return res.status(400).json({ message: "File ID is required" });
+    if (!fileId || !mongoose.Types.ObjectId.isValid(fileId)) {
+      logger.warn(`[${reqId}] Invalid or missing file ID`);
+      return res.status(400).json({ message: "Invalid file ID" });
     }
 
-    const cacheKey = `fileud:fileinfo:${fileId}`;
     let fileData;
-
-    // --- Try cache first ---
     const cached = await redis.get(cacheKey);
+
     if (cached) {
       fileData = JSON.parse(cached);
-      logger.info(`[${reqId}] Cache hit for ${fileId}`);
+      logger.info(`[${reqId}] Cache hit for file ${fileId}`);
     } else {
-      // --- Fallback: DB ---
-      const file = await File.findById(fileId);
+      const file = await File.findById(fileId)
+        .select("name actualName user public mimeType size createdAt")
+        .populate("user", "email name");
+
       if (!file) {
         logger.info(`[${reqId}] File not found in DB`);
         return res.status(404).json({ message: "File not found" });
@@ -111,31 +108,41 @@ exports.downloadFile = async (req, res) => {
         id: file.id,
         name: file.name,
         actualName: file.actualName,
-        userId: file.user.toString(),
+        userId: file.user._id.toString(),
+        user: { name: file.user.name },
         public: file.public,
+        mimeType: file.mimeType,
+        size: file.size,
       };
 
-      await redis.set(cacheKey, JSON.stringify(fileData), { EX: 600 });
+      await redis.set(cacheKey, JSON.stringify(fileData), { EX: 3600 });
       logger.info(`[${reqId}] Cached file info for ${fileId}`);
     }
 
-    // --- Access control ---
-    if (!fileData.public && fileData.userId !== userId) {
-      logger.info(`[${reqId}] Unauthorized download attempt`);
-      return res.status(403).json({ message: "Unauthorized access" });
+    if (!fileData.public) {
+      const user = getUserByToken(req);
+      if (!user) {
+        logger.warn(`[${reqId}] Unauthorized download attempt (no token)`);
+        return res.status(403).json({ message: "Access denied" });
+      }
+      console.log(typeof user.id,typeof fileData.user.id, fileData)
+      if (user.id !== fileData.user.id) {
+        logger.warn(`[${reqId}] Unauthorized access to ${fileId}`);
+        return res.status(404).json({ message: "File not found" });
+      }
     }
 
-    // --- Verify file exists ---
     const filePath = path.join(UPLOAD_DIR, fileData.name);
     if (!fs.existsSync(filePath)) {
-      logger.error(`[${reqId}] File missing from server: ${filePath}`);
+      logger.error(`[${reqId}] File missing on server: ${filePath}`);
       return res.status(404).json({ message: "File missing from server" });
     }
 
-    // --- Stream it efficiently ---
     streamFile(filePath, fileData.actualName, res, reqId);
   } catch (err) {
-    logger.error(`[${reqId}] Download error: ${err.message}\n${err.stack}`);
+    logger.error(`[${reqId}] Download error: ${err.message}`, {
+      stack: err.stack,
+    });
     if (!res.headersSent)
       res.status(500).json({ message: "File download failed" });
   } finally {
@@ -143,88 +150,36 @@ exports.downloadFile = async (req, res) => {
   }
 };
 
-exports.downloadFileNoAuth = async (req, res) => {
-  const reqId = req.id;
-  logger.info(`[${reqId}] Starting file download no auth`);
-
-  try {
-    const { id: fileId } = req.params;
-    if (!fileId) {
-      logger.warn(`[${reqId}] Missing file ID in request`);
-      return res.status(400).json({ message: "File ID is required" });
-    }
-
-    const cacheKey = `fileud:fileinfo:${fileId}`;
-    let fileData;
-
-    // --- Try cache first ---
-    const cached = await redis.get(cacheKey);
-    if (cached) {
-      fileData = JSON.parse(cached);
-      logger.info(`[${reqId}] Cache hit for ${fileId}`);
-    } else {
-      // --- Fallback: DB ---
-      const file = await File.findById(fileId);
-      if (!file) {
-        logger.info(`[${reqId}] File not found in DB`);
-        return res.status(404).json({ message: "File not found" });
-      }
-
-      fileData = {
-        id: file.id,
-        name: file.name,
-        actualName: file.actualName,
-        userId: file.user.toString(),
-        public: file.public,
-      };
-
-      await redis.set(cacheKey, JSON.stringify(fileData), { EX: 600 });
-
-      logger.info(`[${reqId}] Cached file info for ${fileId}`);
-    }
-
-    // --- Access control ---
-    if (!fileData.public) {
-      logger.info(`[${reqId}] Unauthorized download attempt`);
-      return res.status(404).json({ message: "File not found" });
-    }
-
-    // --- Verify file exists ---
-    const filePath = path.join(UPLOAD_DIR, fileData.name);
-    if (!fs.existsSync(filePath)) {
-      logger.error(`[${reqId}] File missing from server: ${filePath}`);
-      return res.status(404).json({ message: "File missing from server" });
-    }
-
-    // --- Stream it efficiently ---
-    streamFile(filePath, fileData.actualName, res, reqId);
-  } catch (err) {
-    logger.error(`[${reqId}] Download error: ${err.message}\n${err.stack}`);
-    if (!res.headersSent)
-      res.status(500).json({ message: "File download no auth failed" });
-  } finally {
-    logger.info(`[${reqId}] Completed file download no auth`);
-  }
-};
-// LIST FILES
 exports.listFiles = async (req, res) => {
   const reqId = req.id;
   logger.info(`[${reqId}] Starting file list retrieval`);
 
   try {
     const userId = req.user.id;
+    const page = Math.max(parseInt(req.query.page) || 1, 1);
+    const DEFAULT_LIMIT = 10;
+    const MAX_LIMIT = 50;
+    const limit = Math.min(
+      parseInt(req.query.limit) || DEFAULT_LIMIT,
+      MAX_LIMIT
+    );
+    const skip = (page - 1) * limit;
+
+    const total = await File.countDocuments({ user: userId });
+
     const files = await File.find({ user: userId })
       .sort({ createdAt: -1 })
-      .select("id actualName size mimeType createdAt");
+      .skip(skip)
+      .limit(limit)
+      .select("id actualName size mimeType public createdAt");
+
+    const hasMore = skip + files.length < total;
 
     logger.info(
       `[${reqId}] Retrieved ${files.length} files for user ${userId}`
     );
 
-    res.json({
-      total: files.length,
-      files,
-    });
+    res.json({ total, files, hasMore });
   } catch (err) {
     logger.error(`[${reqId}] List files error: ${err.message} ${err.stack}`);
     res.status(500).json({ message: "Failed to list files" });
@@ -233,119 +188,82 @@ exports.listFiles = async (req, res) => {
   }
 };
 
-// Get file info
 exports.getFileInfo = async (req, res) => {
   const reqId = req.id;
+  const fileId = req.params.id;
+  const cacheKey = `fileud:fileinfo:${fileId}`;
   logger.info(`[${reqId}] Starting file info fetch`);
 
   try {
-    const fileId = req.params.id;
-    const cacheKey = `fileud:fileinfo:${fileId}`;
+    if (!fileId || mongoose.Types.ObjectId.isValid(fileId) === false) {
+      logger.warn(`[${reqId}] File ID is invalid`);
+      return res.status(400).json({ message: "File ID is invalid" });
+    }
 
+    let fileData;
     const cached = await redis.get(cacheKey);
     if (cached) {
-      logger.info(`[${reqId}] Cache hit for ${fileId}`);
-      return res.json(JSON.parse(cached));
-    }
+      fileData = JSON.parse(cached);
+      logger.info(`[${reqId}] Cache hit for file ${fileId}`);
+    } else {
+      const file = await File.findById(fileId)
+        .select("name actualName user public mimeType createdAt size")
+        .populate("user", "email name");
 
-    const file = await File.findById(fileId).populate("user", "email name");
-    if (!file) {
-      logger.info(`[${reqId}] File not found`);
-      return res.status(404).json({ message: "File not found" });
-    }
-
-    const info = {
-      id: file._id,
-      actualName: file.actualName,
-      uploadedBy: file.user?.name,
-      email: file.user?.email,
-      uploadedAt: file.createdAt,
-    };
-
-    await redis.set(cacheKey, JSON.stringify(fileData), { EX: 600 });
-
-    logger.info(`[${reqId}] Cached file info for ${fileId}`);
-
-    res.json(info);
-  } catch (err) {
-    logger.error(`[${reqId}] File info error: ${err.message} ${err.stack}`);
-    res.status(500).json({ message: "Failed to fetch file info" });
-  } finally {
-    logger.info(`[${reqId}] Completed file info fetch`);
-  }
-};
-// Get file info without authentication
-exports.getFileInfoNoAuth = async (req, res) => {
-  const reqId = req.id;
-  logger.info(`[${reqId}] Starting file info fetch`);
-
-  try {
-    const fileId = req.params.id;
-    if (!fileId) {
-      logger.warn(`[${reqId}] Missing file ID in request`);
-      return res.status(400).json({ message: "File ID is required" });
-    }
-
-    const cacheKey = `fileud:fileinfo:${fileId}`;
-
-    // --- Try cache first ---
-    const cachedData = await redis.get(cacheKey);
-    if (cachedData) {
-      logger.info(`[${reqId}] Cache hit for ${fileId}`);
-
-      try {
-        const cachedJson = JSON.parse(cachedData);
-
-        // If the file is not public, act as if not found
-        if (!cachedJson.public) {
-          logger.info(`[${reqId}] Non-public file access attempt (cached)`);
-          return res.status(404).json({ message: "File not found" });
-        }
-
-        return res.json(cachedJson);
-      } catch (parseErr) {
-        logger.warn(
-          `[${reqId}] Failed to parse cached data for ${fileId}: ${parseErr.message}`
-        );
+      if (!file) {
+        logger.info(`[${reqId}] File not found`);
+        return res.status(404).json({ message: "File not found" });
       }
+      fileData = {
+        id: file.id,
+        name: file.name,
+        actualName: file.actualName,
+        user: {
+          name: file.user.name,
+          id: file.user._id,
+        },
+        public: file.public,
+        mimeType: file.mimeType,
+        createdAt: file.createdAt,
+        size: file.size,
+      };
+
+      redis.set(cacheKey, JSON.stringify(fileData), { EX: 3600 });
+      logger.info(`[${reqId}] Cached file info for ${fileId}`);
     }
 
-    // --- Fetch from DB ---
-    const file = await File.findById(fileId).populate("user", "email name");
-    if (!file) {
-      logger.info(`[${reqId}] File not found in DB`);
+    if (fileData.public) {
+      return res.json({
+        message: "Successfully fetched public file info",
+        file: fileData,
+      });
+    }
+
+    const user = getUserByToken(req);
+    if (!user) {
+      logger.warn(`[${reqId}] Unauthorized access attempt for ${fileId}`);
+      return res.status(403).json({ message: "Access to this file is denied" });
+    }
+
+    if (user._id !== fileData.userId) {
+      logger.warn(`[${reqId}] Unauthorized access attempt for ${fileId}`);
       return res.status(404).json({ message: "File not found" });
     }
 
-    // If file is not public, hide its existence
-    if (!file.public) {
-      logger.info(`[${reqId}] Non-public file access attempt (DB)`);
-      return res.status(404).json({ message: "File not found" });
-    }
-
-    // --- Prepare response object ---
-    const info = {
-      id: file._id,
-      actualName: file.actualName,
-      uploadedBy: file.user?.name || "Unknown",
-      email: file.user?.email || null,
-      uploadedAt: file.createdAt,
-      public: file.public,
-    };
-
-    // --- Cache result for 10 minutes ---
-    await redis.set(cacheKey, JSON.stringify(info), { EX: 600 });
-
-    logger.info(`[${reqId}] Cached public file info for ${fileId}`);
-
-    return res.json(info);
+    return res.json({
+      message: "Successfully fetched private file info",
+      file: fileData,
+    });
   } catch (err) {
-    logger.error(`[${reqId}] File info error: ${err.message}\n${err.stack}`);
+    logger.error(`[${reqId}] File info error: ${err.message}`, {
+      stack: err.stack,
+    });
     return res.status(500).json({ message: "Failed to fetch file info" });
   } finally {
     logger.info(`[${reqId}] Completed file info fetch`);
   }
 };
+
 exports.updatePublicStatus = async (req, res) => {
   const reqId = req.id;
   logger.info(`[${reqId}] Starting file public status update`);
@@ -354,7 +272,6 @@ exports.updatePublicStatus = async (req, res) => {
     const fileId = req.params.id;
     const { isPublic } = req.body;
 
-    // Basic validation
     if (!fileId || typeof isPublic !== "boolean") {
       logger.warn(`[${reqId}] Missing or invalid fileId / isPublic in request`);
       return res
@@ -362,17 +279,14 @@ exports.updatePublicStatus = async (req, res) => {
         .json({ message: "Valid fileId and boolean isPublic are required" });
     }
 
-    // Fetch file
     const file = await File.findById(fileId).select(
-      "id name actualName public createdAt"
+      "id name actualName size mimeType public createdAt"
     );
     if (!file) {
       logger.info(`[${reqId}] File not found`);
       return res.status(404).json({ message: "File not found" });
     }
-    console.log(file.toJSON);
-    console.log(file.public, isPublic);
-    // Update status only if it’s changed
+
     if (file.public === isPublic) {
       logger.info(
         `[${reqId}] No change in public status for ${file.actualName}`
@@ -380,13 +294,10 @@ exports.updatePublicStatus = async (req, res) => {
       return res.json({ message: "No change needed", file });
     }
 
-    // Update and save
     file.public = isPublic;
     await file.save();
 
-    // Prepare info for cache
     const cacheKey = `fileud:fileinfo:${fileId}`;
-    // Update cache (or recreate)
     redis
       .del(cacheKey)
       .then(() => logger.info(`[${reqId}] Cache deleted for ${fileId}`))
@@ -410,7 +321,6 @@ exports.updatePublicStatus = async (req, res) => {
   }
 };
 
-// DELETE FILE
 exports.deleteFile = async (req, res) => {
   const reqId = req.id;
   logger.info(`[${reqId}] Starting file deletion`);
