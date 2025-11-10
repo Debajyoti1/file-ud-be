@@ -1,5 +1,7 @@
 const initRedis = require("../config/redis");
 const redisClient = initRedis();
+const logger = require("../config/logger.config");
+
 function rateLimit({ prefix, limit, window }) {
   return async (req, res, next) => {
     try {
@@ -21,7 +23,7 @@ function rateLimit({ prefix, limit, window }) {
 
       next();
     } catch (err) {
-      console.error("Rate limit middleware error:", err.message);
+      logger.error("Rate limit middleware error:", err.message);
       res.status(500).json({ message: "Rate limiting failed" });
     }
   };

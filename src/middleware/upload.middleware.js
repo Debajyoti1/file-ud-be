@@ -1,7 +1,7 @@
 const multer = require("multer");
 const fs = require("fs");
 const path = require("path");
-const logger = require("../config/logger.config"); // adjust path if needed
+const logger = require("../config/logger.config");
 
 const TEMP_DIR = path.join(__dirname, "../../tmp");
 const UPLOAD_DIR = path.join(__dirname, "../../uploads");
