@@ -13,7 +13,7 @@ RUN npm ci --only=production
 COPY . .
 
 # Expose the port your app runs on
-EXPOSE 3000
+EXPOSE 5000
 
 # Set NODE_ENV to production
 ENV NODE_ENV=production
