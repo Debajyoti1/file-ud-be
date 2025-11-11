@@ -1,0 +1,24 @@
+services:
+  file-ud-be:
+    build: .
+    ports:
+      - "5100:5000"
+    env_file:
+      - .env
+    volumes:
+      - file-ud-be:/app/uploads
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    restart: always
+    environment:
+      - NODE_ENV=production
+
+volumes:
+  file-ud-be:
+    driver: local
