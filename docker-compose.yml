@@ -6,7 +6,7 @@ services:
     env_file:
       - .env
     volumes:
-      - file-ud-be:/app/uploads
+      - file-ud-be:/app/data
     deploy:
       resources:
         limits:

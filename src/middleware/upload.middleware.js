@@ -3,8 +3,8 @@ const fs = require("fs");
 const path = require("path");
 const logger = require("../config/logger.config");
 
-const TEMP_DIR = path.join(__dirname, "../../tmp");
-const UPLOAD_DIR = path.join(__dirname, "../../uploads");
+const TEMP_DIR = path.join(__dirname, "../../data/tmp");
+const UPLOAD_DIR = path.join(__dirname, "../../data/uploads");
 
 // Auto-clear tmp folder on startup
 if (fs.existsSync(TEMP_DIR)) {
