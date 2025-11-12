@@ -8,14 +8,22 @@ const logger = require("../config/logger.config");
 const redis = initRedis();
 
 const generateAccessToken = (user) =>
-  jwt.sign({ id: user._id, email: user.email, name: user.name }, config.jwt.accessSecret, {
-    expiresIn: config.jwt.accessExpiry,
-  });
+  jwt.sign(
+    { id: user._id, email: user.email, name: user.name },
+    config.jwt.accessSecret,
+    {
+      expiresIn: config.jwt.accessExpiry,
+    }
+  );
 
 const generateRefreshToken = (user) =>
-  jwt.sign({ id: user._id, email: user.email, name: user.name }, config.jwt.refreshSecret, {
-    expiresIn: config.jwt.refreshExpiry,
-  });
+  jwt.sign(
+    { id: user._id, email: user.email, name: user.name },
+    config.jwt.refreshSecret,
+    {
+      expiresIn: config.jwt.refreshExpiry,
+    }
+  );
 
 const buildRedisKey = (userId, token) => `fileud:refresh:${userId}:${token}`;
 
@@ -35,7 +43,28 @@ exports.register = async (req, res) => {
     const user = await User.create({ name, email, password: hashed });
 
     logger.info(`[${reqId}] User registered successfully`);
-    res.status(201).json({ message: "User registered successfully", user });
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    const redisKey = buildRedisKey(user._id, refreshToken);
+    await redis.set(redisKey, "valid", { EX: 7 * 24 * 60 * 60 });
+
+    logger.info(`[${reqId}] Login successful for user: ${email}`);
+
+    res
+      .cookie("accessToken", accessToken, {
+        httpOnly: true,
+        secure: config.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 15 * 60 * 1000,
+      })
+      .cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: config.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      })
+      .json({ message: "Registration successful", user });
   } catch (err) {
     logger.error(`[${reqId}] Register error: ${err.message} ${err.stack}`);
     res.status(500).json({ message: "Internal server error" });
@@ -92,7 +121,6 @@ exports.login = async (req, res) => {
   }
 };
 
-
 exports.logout = async (req, res) => {
   const reqId = req.id;
   logger.info(`[${reqId}] Starting logout`);
@@ -147,7 +175,9 @@ exports.refresh = async (req, res) => {
 
       if (!exists) {
         logger.error(`[${reqId}] Refresh token expired or invalid`);
-        return res.status(403).json({ message: "Refresh token expired or invalid" });
+        return res
+          .status(403)
+          .json({ message: "Refresh token expired or invalid" });
       }
 
       const user = await User.findById(decoded.id);
@@ -163,7 +193,9 @@ exports.refresh = async (req, res) => {
       const newKey = buildRedisKey(user._id, newRefreshToken);
       await redis.set(newKey, "valid", { EX: 7 * 24 * 60 * 60 });
 
-      logger.info(`[${reqId}] Token refreshed successfully for user: ${user.email}`);
+      logger.info(
+        `[${reqId}] Token refreshed successfully for user: ${user.email}`
+      );
 
       res
         .cookie("accessToken", newAccessToken, {
@@ -188,17 +220,20 @@ exports.refresh = async (req, res) => {
   }
 };
 
-
 exports.getMyInfo = async (req, res) => {
   const reqId = req.id;
   logger.info(`[${reqId}] Starting user info fetch`);
 
   try {
     const user = await User.findById(req.user.id).select("email name");
-    logger.info(`[${reqId}] User info fetched successfully for user: ${user.email}`);
-    res.json({message: "User info fetched successfully", user});
+    logger.info(
+      `[${reqId}] User info fetched successfully for user: ${user.email}`
+    );
+    res.json({ message: "User info fetched successfully", user });
   } catch (err) {
-    logger.error(`[${reqId}] User info fetch error: ${err.message} ${err.stack}`);
+    logger.error(
+      `[${reqId}] User info fetch error: ${err.message} ${err.stack}`
+    );
     res.status(500).json({ message: "Internal server error" });
   } finally {
     logger.info(`[${reqId}] Completed user info fetch`);
