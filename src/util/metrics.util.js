@@ -1,7 +1,6 @@
 const client = require("prom-client");
 const config = require('../config/env');
 
-
 /**
  * ---------------------------------------------------------
  * 1. Registry
@@ -9,7 +8,7 @@ const config = require('../config/env');
  */
 const register = new client.Registry();
 
-// Add default labels (VERY important in prod)
+// Default labels
 register.setDefaultLabels({
   app: config.app.name,
   env: config.app.env
@@ -28,11 +27,11 @@ client.collectDefaultMetrics({
 
 /**
  * ---------------------------------------------------------
- * 3. Event loop lag (critical for Node.js)
+ * 3. Event loop lag
  * ---------------------------------------------------------
  */
 const eventLoopLag = new client.Gauge({
-  name: "nodejs_event_loop_lag_seconds",
+  name: "fileudbe_nodejs_event_loop_lag_seconds",
   help: "Event loop lag in seconds",
   registers: [register]
 });
@@ -47,21 +46,18 @@ setInterval(() => {
 
 /**
  * ---------------------------------------------------------
- * 4. HTTP RED metrics
+ * 4. HTTP RED metrics (prefixed)
  * ---------------------------------------------------------
  */
-
-// Request count
 const httpRequestsTotal = new client.Counter({
-  name: "http_requests_total",
+  name: "fileudbe_http_requests_total",
   help: "Total HTTP requests",
   labelNames: ["method", "route", "status"],
   registers: [register]
 });
 
-// Request duration
 const httpRequestDuration = new client.Histogram({
-  name: "http_request_duration_ms",
+  name: "fileudbe_http_request_duration_ms",
   help: "HTTP request latency",
   labelNames: ["method", "route", "status"],
   buckets: [
@@ -71,32 +67,38 @@ const httpRequestDuration = new client.Histogram({
   registers: [register]
 });
 
-// In-flight requests
 const httpRequestsInFlight = new client.Gauge({
-  name: "http_requests_in_flight",
+  name: "fileudbe_http_requests_in_flight",
   help: "Number of in-flight HTTP requests",
   registers: [register]
 });
 
 /**
  * ---------------------------------------------------------
- * 5. Express middleware
+ * 5. Route normalization helper
+ * ---------------------------------------------------------
+ */
+function normalizeRoute(req) {
+  // req.route?.path works for normal routes
+  if (req.route?.path) return req.baseUrl + req.route.path;
+  // For dynamic routes with IDs, replace numbers with :id
+  const path = req.path || req.originalUrl || "unknown";
+  return path.replace(/\d+/g, ":id");
+}
+
+/**
+ * ---------------------------------------------------------
+ * 6. Express middleware
  * ---------------------------------------------------------
  */
 function metricsMiddleware(req, res, next) {
   httpRequestsInFlight.inc();
-
   const endTimer = httpRequestDuration.startTimer();
 
   res.on("finish", () => {
     httpRequestsInFlight.dec();
 
-    // VERY IMPORTANT: route normalization
-    const route =
-      req.route?.path ||
-      req.baseUrl ||
-      "unknown";
-
+    const route = normalizeRoute(req);
     const labels = {
       method: req.method,
       route,
@@ -110,10 +112,9 @@ function metricsMiddleware(req, res, next) {
   next();
 }
 
-
 /**
  * ---------------------------------------------------------
- * 7. Metrics endpoint handler
+ * 7. Metrics endpoint
  * ---------------------------------------------------------
  */
 async function metricsHandler(req, res) {
@@ -139,11 +140,8 @@ module.exports = {
   register,
   metricsMiddleware,
   metricsHandler,
-
-  // HTTP metrics
   httpRequestsTotal,
   httpRequestDuration,
   httpRequestsInFlight,
-
   shutdownMetrics
 };
