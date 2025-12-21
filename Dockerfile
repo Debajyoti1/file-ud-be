@@ -14,6 +14,7 @@ COPY . .
 
 # Expose the port your app runs on
 EXPOSE 5000
+EXPOSE 9100
 
 # Set NODE_ENV to production
 ENV NODE_ENV=production

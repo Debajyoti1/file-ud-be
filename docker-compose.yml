@@ -3,6 +3,8 @@ services:
     build: .
     ports:
       - "5100:5000"
+    expose:
+      - "9100"
     env_file:
       - .env
     volumes:
