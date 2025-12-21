@@ -22,3 +22,9 @@ services:
 volumes:
   file-ud-be:
     driver: local
+networks:
+  monitoring:
+    external: true
+    name: monitoring
+  app:
+    driver: bridge
