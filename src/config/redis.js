@@ -22,17 +22,16 @@ function initRedis() {
   redisClient.on("error", (err) => {
     logger.error("Redis error:", err.message);
     logger.error("Shutting down due to Redis failure...");
-    process.exit(1);
+    process.kill(process.pid, "SIGTERM");
   });
 
   redisClient.on("end", () => {
     logger.error("Redis connection ended unexpectedly. Exiting...");
-    process.exit(1);
   });
 
   redisClient.connect().catch((err) => {
     logger.error("Failed to connect to Redis:", err.message);
-    process.exit(1);
+    process.kill(process.pid, "SIGTERM");
   });
 
   return redisClient;

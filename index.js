@@ -9,16 +9,20 @@ const connectRedis = require("./src/config/redis");
 const logger = require("./src/config/logger.config");
 const routes = require("./src/routes/index.routes");
 const requestIdMiddleware = require("./src/middleware/requestid.middleware");
+const startMetricsServer = require("./metrics");
+const { metricsMiddleware } = require("./src/util/metrics.util");
 
 const app = express();
 app.disable("x-powered-by");
 
-app.use(cors({
-  origin: ["http://localhost:5173","https://file.debajyotidutta.com"],
-  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
-  optionsSuccessStatus: 204,
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: ["http://localhost:5173", "https://file.debajyotidutta.com"],
+    methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+    optionsSuccessStatus: 204,
+    credentials: true,
+  })
+);
 
 // Handle unexpected errors early
 process.on("uncaughtException", (err) => {
@@ -38,6 +42,7 @@ app.use(helmet());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cookieParser());
+app.use(metricsMiddleware);
 
 // Routes
 app.use("/", routes);
@@ -74,6 +79,9 @@ async function initApp() {
       logger.info(`Server running on ${PORT}`)
     );
 
+    // Start metrics server
+    const metricsServer = startMetricsServer();
+
     // Graceful shutdown
     const shutdown = async (signal) => {
       logger.info(`\n Received ${signal}. Shutting down gracefully...`);
@@ -86,10 +94,19 @@ async function initApp() {
           await redisClient.quit();
           logger.info("Redis connection closed");
         }
-        server.close(() => {
-          logger.info("HTTP server closed");
-          process.exit(0);
+        await new Promise((res, rej) => {
+          server.close(() => {
+            logger.info("HTTP server closed");
+            res();
+          });
         });
+        await new Promise((res, rej) => {
+          metricsServer.close(() => {
+            logger.info("Metrics server closed");
+            res();
+          });
+        });
+        process.exit(0);
       } catch (err) {
         logger.error("Error during shutdown:", err);
         process.exit(1);

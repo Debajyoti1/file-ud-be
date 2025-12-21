@@ -9,12 +9,11 @@ async function connectDB() {
 
   mongoose.connection.on('disconnected', () => {
     logger.error('MongoDB disconnected!');
-    process.exit(1);
   });
 
   mongoose.connection.on('error', (err) => {
     logger.error('MongoDB connection error:', err);
-    process.exit(1);
+    process.kill(process.pid, "SIGTERM");
   });
 
   await mongoose.connect(MONGO_URI);

@@ -4,6 +4,7 @@ const config = {
   app: {
     port: process.env.PORT || 5000,
     env: process.env.NODE_ENV || "development",
+    name: process.env.APP_NAME || "app"
   },
   mongo: {
     uri: process.env.MONGO_URI || "mongodb://localhost:27017/myapp",
