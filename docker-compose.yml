@@ -9,6 +9,9 @@ services:
       - .env
     volumes:
       - file-ud-be:/app/data
+    networks:
+      - app
+      - monitoring
     deploy:
       resources:
         limits:
